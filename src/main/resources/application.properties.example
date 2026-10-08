@@ -1,0 +1,13 @@
+server.port=8687
+spring.datasource.url=jdbc:sqlserver://198.1.2.246:1433;databaseName=mesplan;instance=SQL Server;
+spring.datasource.driver-class-name=com.microsoft.sqlserver.jdbc.SQLServerDriver
+spring.datasource.username=sa
+spring.datasource.password=<задать>
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.SQLServer2005Dialect
+hibernate.proc.param_null_passing=true
+spring.jpa.properties.hibernate.proc.param_null_passing=true
+spring.jpa.show-sql = true
+spring.jpa.properties.hibernate.format_sql = true
+
+server.ssl.enabled=true
+

@@ -1,0 +1,8 @@
+build/
+.gradle/
+*.iml
+.idea/
+out/
+
+# Пароли БД и прочие секреты — только локально. Образец без паролей: application.properties.example
+src/main/resources/application.properties
