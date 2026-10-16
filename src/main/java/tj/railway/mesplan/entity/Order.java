@@ -72,7 +72,10 @@ public class Order {
     @Column(name = "gng", nullable = false, length = 12)
     private String gng;
 
-    @Column(name = "strnazn", nullable = false)
+    // Колонка в базе называется strbazn (опечатка при создании таблицы, снимок
+    // схемы 22.01.2025 — docs/schema-2025-01-22.sql). Поле и JSON остаются strnazn:
+    // так их знают фронт и разбор файла.
+    @Column(name = "strbazn", nullable = false)
     private Integer strnazn;
 
     @Column(name = "codegrpolport", length = 20)
@@ -129,6 +132,10 @@ public class Order {
     @Column(name = "admcount", columnDefinition = "tinyint not null")
     private Short admcount;
 
+    // Первая (служебная) строка файла заявок. Колонки для неё в таблице orders НЕТ —
+    // с отображением на колонку любое чтение и запись заявок падали
+    // («Invalid column name 'header'»). Поле живёт только в ответе на загрузку.
+    @Transient
     private String header;
 
     // orphanRemoval: администрация, убранная из заявки в форме, удаляется и из

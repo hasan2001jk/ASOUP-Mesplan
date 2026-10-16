@@ -9,9 +9,9 @@
 #   AUTH_MODE=enforce JWT_SECRET=… test-stand/stand.sh up   — с проверкой токенов
 #
 # Внутри:
-#   - SQL Server 2019, база mesplan с кириллической сортировкой (Cyrillic_General_CI_AS).
-#     ⚠ Схему создаёт сама служба по сущностям (ddl-auto=create) — схемы рабочей базы
-#     пока нет. Как только она будет (docs/schema.sql), стенд надо перевести на неё.
+#   - SQL Server 2019, база mesplan с кириллической сортировкой (Cyrillic_General_CI_AS)
+#     и схемой рабочей базы из SCHEMA (по умолчанию docs/schema-2025-01-22.sql — снимок
+#     IntelliJ). DDL=create — вместо этого схему создаёт служба по сущностям.
 #   - три строки справочников (род вагона, признак собственности, типоразмер);
 #   - служба из build/libs/mesplan.jar на Java 1.8.0_65 — той же версии, что на сервере
 #     (Zulu 8u65 берётся из кэша стенда AsoupServer или скачивается один раз).
@@ -53,12 +53,16 @@ up() {
     sqlcmd -Q "IF DB_ID('mesplan') IS NULL CREATE DATABASE mesplan COLLATE Cyrillic_General_CI_AS" >/dev/null 2>&1 && break
     sleep 3
   done
+  if [ "${DDL:-none}" = none ]; then
+    docker cp "${SCHEMA:-${ROOT}/docs/schema-2025-01-22.sql}" mp-stand-sql:/tmp/schema.sql
+    sqlcmd -d mesplan -b -i /tmp/schema.sql >/dev/null
+  fi
   cat > "${CACHE}/cfg/stand.properties" <<EOF
 server.port=8687
 spring.datasource.url=jdbc:sqlserver://mp-stand-sql:1433;databaseName=mesplan
 spring.datasource.username=sa
 spring.datasource.hikari.connection-timeout=3000
-spring.jpa.hibernate.ddl-auto=${DDL:-create}
+spring.jpa.hibernate.ddl-auto=${DDL:-none}
 EOF
   cp "${ROOT}/build/libs/mesplan.jar" "${CACHE}/app.jar"
   docker run -d --name mp-stand-app --network "${NET}" -p "127.0.0.1:${PORT}:8687" -e LANG=C.UTF-8 \
