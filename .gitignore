@@ -4,8 +4,13 @@ build/
 .idea/
 out/
 
-# Пароли БД и прочие секреты — только локально. Образец без паролей: application.properties.example
-src/main/resources/application.properties
+# application.properties теперь в git без паролей (пароль — переменная среды MESPLAN_DB_PASSWORD)
 
 # Копия прод-папки (содержит пароли)
 docs/prod-copy/
+
+# Старая программа МЕСПЛАН (Delphi, 2006) — только для справки, в git не кладётся
+docs/*.exe
+
+# Готовые сборки для выката (JAR) — вне git
+release/

@@ -1,13 +1,20 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '2.6.3'
+    id 'org.springframework.boot' version '2.7.18'
     id 'io.spring.dependency-management' version '1.0.15.RELEASE'
     id "io.freefair.lombok" version "8.10"
-
 }
 
-group = 'org.example'
-version = '1.0-SNAPSHOT'
+group = 'tj.railway'
+version = '1.0'
+
+// На рабочем сервере (198.1.2.246) — jdk1.8.0_65. Не новее: старый SQL Server
+// там говорит только TLS 1.0, а Java 8u291+ его отключила (тот же урок, что у
+// Backend-Auth и AsoupServer). Поэтому байт-код Java 8.
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
 
 repositories {
     mavenCentral()
@@ -17,13 +24,29 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc:8.4.1.jre8'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-    /*testImplementation platform('org.junit:junit-bom:5.10.0')
-    testImplementation 'org.junit.jupiter:junit-jupiter'*/
+    // Проверка токена Backend-Auth (HS512) — та же версия, что в AsoupServer.
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // Закреплён: 8.4.1 проверен с TLS 1.0 к SQL Server на .246 под Java 8u65
+    // (AsoupServer работает с той же базой тем же драйвером). Spring Boot 2.7
+    // по умолчанию принёс бы 10.x — не поднимать.
+    runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc:8.4.1.jre8'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
 test {
     useJUnitPlatform()
+}
+
+// Один исполняемый JAR без «-plain» — его и кладут на сервер.
+jar {
+    enabled = false
+}
+bootJar {
+    archiveFileName = 'mesplan.jar'
 }
