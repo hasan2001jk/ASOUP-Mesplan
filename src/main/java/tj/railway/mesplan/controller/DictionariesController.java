@@ -1,10 +1,16 @@
 package tj.railway.mesplan.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tj.railway.mesplan.configuration.NoKnownClient;
+import tj.railway.mesplan.entity.dictionaries.Conttypesize;
+import tj.railway.mesplan.entity.dictionaries.Przsob;
+import tj.railway.mesplan.entity.dictionaries.Rodvag;
 import tj.railway.mesplan.service.MesplanService;
 
+import java.util.List;
+
+/** Справочники формы «Ввод». Ответы списков — те же, что в исходнике (байт в байт). */
 @RestController
 @CrossOrigin
 @RequiredArgsConstructor
@@ -14,39 +20,35 @@ public class DictionariesController {
     private final MesplanService mesplanService;
 
     @GetMapping("/rodvag")
-    ResponseEntity<Object> getRodvags() {
-        return ResponseEntity.ok(mesplanService.getRodvags());
+    public List<Rodvag> getRodvags() {
+        return mesplanService.getRodvags();
     }
+
+    @NoKnownClient("фронт берёт весь справочник /rodvag")
     @GetMapping("/rodvag/{id}")
-    ResponseEntity<Object> getRodvag(@PathVariable String id) {
-        return ResponseEntity.ok(mesplanService.getRodvag(id));
+    public Rodvag getRodvag(@PathVariable String id) {
+        return mesplanService.getRodvag(id);
     }
 
     @GetMapping("/przsob")
-    ResponseEntity<Object> getPrzsob() {
-        return ResponseEntity.ok(mesplanService.getPrzsobs());
-    }
-    @GetMapping("/przsob/{id}")
-    ResponseEntity<Object> getPrzsob(@PathVariable String id) {
-        try {
-            int i = Integer.parseInt(id);
-            return ResponseEntity.ok(mesplanService.getPrzsob(i));
-        } catch (Exception e) {
-            return ResponseEntity.ok(e.getLocalizedMessage());
-        }
+    public List<Przsob> getPrzsob() {
+        return mesplanService.getPrzsobs();
     }
 
-        @GetMapping("/conttypesize")
-    ResponseEntity<Object> getConttypesizes() {
-        return ResponseEntity.ok(mesplanService.getConttypesizes());
+    @NoKnownClient("фронт берёт весь справочник /przsob")
+    @GetMapping("/przsob/{id}")
+    public Przsob getPrzsob(@PathVariable Integer id) {
+        return mesplanService.getPrzsob(id);
     }
+
+    @GetMapping("/conttypesize")
+    public List<Conttypesize> getConttypesizes() {
+        return mesplanService.getConttypesizes();
+    }
+
+    @NoKnownClient("фронт берёт весь справочник /conttypesize")
     @GetMapping("/conttypesize/{id}")
-    ResponseEntity<Object> getConttypesizes(@PathVariable String id) {
-        try {
-            Integer i = Integer.parseInt(id);
-            return ResponseEntity.ok(mesplanService.getConttypesize(i));
-        } catch (Exception e) {
-            return ResponseEntity.ok(e.getLocalizedMessage());
-        }
+    public Conttypesize getConttypesize(@PathVariable Integer id) {
+        return mesplanService.getConttypesize(id);
     }
 }

@@ -1,0 +1,36 @@
+# Тесты на каждый push и pull request.
+#
+# Базы, FTP и рабочих серверов тесты не трогают: разбор файла заявок, проверки
+# перед записью, договор ответов с фронтом (MockMvc без базы), токены и роли.
+# Проверка на настоящем SQL Server — test-stand/stand.sh (вручную, в Docker).
+
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'      # на рабочем сервере jdk1.8.0_65 — Java 8, не новее
+          cache: gradle
+
+      - name: Сборка и тесты
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean test bootJar
+
+      - name: Отчёты тестов при падении
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: build/reports/tests/

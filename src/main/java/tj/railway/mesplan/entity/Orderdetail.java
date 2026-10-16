@@ -15,8 +15,14 @@ public class Orderdetail {
     @Column(name = "id", nullable = false)
     private Integer id;
 
+    /*
+     * Связь с заявкой пишет колонку orderid. В исходнике и связь, и поле ниже были
+     * insertable = false — то есть orderid не записывал НИКТО, и строка
+     * администрации не могла сохраниться (orderid NOT NULL). Теперь колонку пишет
+     * связь, а поле orderid только читается — для фронта.
+     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "orderid", nullable = false, insertable = false, updatable = false)
+    @JoinColumn(name = "orderid", nullable = false)
     @JsonIgnore
     private Order order;
     @Column(name = "orderid", nullable = false, insertable = false, updatable = false)

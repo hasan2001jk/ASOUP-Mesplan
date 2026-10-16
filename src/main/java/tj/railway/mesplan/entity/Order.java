@@ -131,7 +131,9 @@ public class Order {
 
     private String header;
 
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
+    // orphanRemoval: администрация, убранная из заявки в форме, удаляется и из
+    // базы (без него строка оставалась висеть при пересохранении заявки).
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Fetch(FetchMode.SUBSELECT)
     private List<Orderdetail> orderdetails = new ArrayList<>();
 
