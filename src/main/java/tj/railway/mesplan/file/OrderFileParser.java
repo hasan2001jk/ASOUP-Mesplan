@@ -3,6 +3,9 @@ package tj.railway.mesplan.file;
 import tj.railway.mesplan.entity.Order;
 import tj.railway.mesplan.entity.Orderdetail;
 
+import java.beans.IntrospectionException;
+import java.beans.Introspector;
+import java.beans.PropertyDescriptor;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -10,25 +13,25 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Разбор файла заявок МЕСПЛАН.
+ * Разбор файла заявок МЕСПЛАН (PL_K — корректировка, PLAN — основной план, PL_E).
  *
- * Формат — тот, что читал исходный MesplanService.getOrder (он же — таблица
- * WORK/WORK1 старой программы mesplan2006):
+ * Формат — как у старой программы mesplan2016 (main.pas) и исходного
+ * MesplanService.getOrder; сверен с архивом 2018–2026 (docs/mesplan_messages,
+ * 93 665 файлов, 193 470 заявок — ArchiveParseTest):
  *
- *   строка 1        служебная строка, сохраняется в order.header как есть;
- *   строка 2        поля заявки через «^», каждое поле кончается «^»:
- *                   35 полей заявки (FIELDS), затем группы по 8 полей — по одной
- *                   на каждую ж/д администрацию (DETAIL_FIELDS).
+ *   строка «P…»/«R…»   идентификатор файла → order.header;
+ *   прочие строки       по заявке на строку: поля через «^», 35 полей заявки
+ *                       (FIELDS), затем по группе на ж/д администрацию
+ *                       (DETAIL_FIELDS: 8 полей, при «Виде строки» 001 — 6).
  *
  * Отличия от исходного разбора — только там, где он падал или терял данные:
- *  - ошибка формата называет строку, поле и полученное значение (было: ответ «2»);
+ *  - несколько заявок в файле (исходник брал первую строку, остальные терял);
+ *  - ошибка называет строку, поле и значение (было: ответ «2»);
  *  - длина текста и диапазон tinyint проверяются здесь, а не базой;
- *  - «Причина отказа» последней администрации без завершающего «^»
- *    сохраняется (исходник её молча обнулял);
- *  - конец строки \r\n или \n в конце файла не ломает разбор (исходник уходил
- *    в цикл по «\r\n» и падал).
- * На файлах, которые исходник разбирал без ошибки, результат тот же —
- * это проверяет OrderFileParserTest на замороженной копии исходного кода.
+ *  - «Причина отказа» последней администрации без завершающего «^» сохраняется;
+ *  - перевод строки в конце файла не ломает разбор.
+ * На однострочных файлах, которые исходник разбирал без ошибки, результат тот
+ * же — OrderFileParserTest сверяет с замороженной копией исходного кода.
  */
 public final class OrderFileParser {
 
@@ -59,7 +62,7 @@ public final class OrderFileParser {
     /** Поля заявки в порядке файла. Длины — по колонкам таблицы orders. */
     static final List<Field> FIELDS = Arrays.asList(
             f("adm", "Ж/д администрация", Kind.INT),
-            t("ftype", "Тип файла", 2),
+            t("ftype", "Тип файла", 4),
             t("strview", "Вид строки", 3),
             f("datepogr", "Дата погрузки", Kind.DATE),
             f("transid", "Вид сообщения", Kind.INT),
@@ -108,57 +111,94 @@ public final class OrderFileParser {
     private OrderFileParser() {
     }
 
+    /** Длина колонки orders.header. */
+    static final int HEADER_MAX = 50;
+
     /**
+     * Разбор файла заявок. Один файл — сколько угодно заявок, по одной на строку
+     * (в архиве 2018–2026: у 20 % файлов их больше одной, у PLAN — сотни).
+     *
+     * Правила — как в старой программе (mesplan2016, main.pas, «Просмотр и
+     * корректировка заявок (2016)»):
+     *  - строка, начинающаяся с «P» или «R», — идентификатор файла (обычно первая,
+     *    например «PL_K6610-2026-10-15-14.59.56.666397_NV_2013.1»); он пишется в
+     *    header каждой заявки и нужен для ответного файла;
+     *  - любая другая непустая строка — заявка: 35 полей, затем группы по 8 полей
+     *    на каждую ж/д администрацию; при «Виде строки» 001 — по 6 (без результата
+     *    и причины отказа).
+     *
      * @param text  содержимое файла, уже раскодированное (файлы — в CP866)
      * @param today дата загрузки — пишется в dateoper
      */
-    public static Order parse(String text, LocalDate today) {
+    public static List<Order> parseFile(String text, LocalDate today) {
         if (text == null || text.trim().isEmpty()) {
             throw new OrderFormatException("Файл пустой");
         }
-        int eol = text.indexOf('\n');
-        if (eol < 0) {
-            throw new OrderFormatException("В файле одна строка: нет строки с данными заявки после служебной строки");
+        String header = null;
+        List<Order> orders = new ArrayList<>();
+        String[] lines = text.split("\n", -1);
+        for (int n = 0; n < lines.length; n++) {
+            String line = stripCr(lines[n]);
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+            char first = Character.toUpperCase(line.charAt(0));
+            if (first == 'P' || first == 'R') {
+                header = line.trim();
+                if (header.length() > HEADER_MAX) {
+                    throw new OrderFormatException("строка " + (n + 1) + ": идентификатор файла длиннее "
+                            + HEADER_MAX + " знаков");
+                }
+                continue;
+            }
+            Order order = parseLine(line, n + 1, today);
+            order.setHeader(header);
+            orders.add(order);
         }
-        String header = stripCr(text.substring(0, eol));
-        String rest = text.substring(eol + 1);
-        int eol2 = rest.indexOf('\n');
-        String line = stripCr(eol2 < 0 ? rest : rest.substring(0, eol2));
-        if (eol2 >= 0 && !rest.substring(eol2 + 1).trim().isEmpty()) {
-            throw new OrderFormatException("В файле больше одной строки с данными. Сейчас поддерживается одна заявка "
-                    + "на файл — пришлите этот файл разработчику, чтобы добавить разбор нескольких.");
+        if (orders.isEmpty()) {
+            throw new OrderFormatException("В файле нет ни одной заявки");
         }
+        return orders;
+    }
 
+    /** Размер группы полей одной администрации: 6 при «Виде строки» 001, иначе 8. */
+    static int groupSize(String strview) {
+        return "001".equals(strview == null ? null : strview.trim()) ? 6 : DETAIL_FIELDS.size();
+    }
+
+    static Order parseLine(String line, int lineNo, LocalDate today) {
+        String at = "строка " + lineNo + ", ";
         List<String> values = split(line);
-        // Исходник принимал строку, где у последней администрации нет даже пустой
-        // «Причины отказа» (ни текста, ни завершающего «^»), — принимаем и мы.
-        if (values.size() > FIELDS.size()
-                && (values.size() - FIELDS.size()) % DETAIL_FIELDS.size() == DETAIL_FIELDS.size() - 1) {
+        if (values.size() < FIELDS.size()) {
+            throw new OrderFormatException(at.substring(0, at.length() - 2) + ": полей " + values.size()
+                    + ", а у заявки их не меньше " + FIELDS.size() + " (последнее — «"
+                    + FIELDS.get(FIELDS.size() - 1).label + "»)");
+        }
+        int group = groupSize(values.get(2));
+        // Старая программа принимала строку, где у последней администрации нет даже
+        // пустой «Причины отказа» (ни текста, ни завершающего «^»), — принимаем и мы.
+        if (group == DETAIL_FIELDS.size() && values.size() > FIELDS.size()
+                && (values.size() - FIELDS.size()) % group == group - 1) {
             values.add("");
         }
         int detailValues = values.size() - FIELDS.size();
-        if (detailValues < 0) {
-            throw new OrderFormatException("Строка 2: полей " + values.size() + ", а у заявки их " + FIELDS.size()
-                    + " (последнее — «" + FIELDS.get(FIELDS.size() - 1).label + "»)");
-        }
-        if (detailValues % DETAIL_FIELDS.size() != 0) {
-            throw new OrderFormatException("Строка 2: после " + FIELDS.size() + " полей заявки осталось "
-                    + detailValues + " полей — не делится на группы по " + DETAIL_FIELDS.size()
+        if (detailValues % group != 0) {
+            throw new OrderFormatException(at.substring(0, at.length() - 2) + ": после " + FIELDS.size()
+                    + " полей заявки осталось " + detailValues + " — не делится на группы по " + group
                     + " (данные ж/д администраций)");
         }
 
         Order order = new Order();
         order.setDateoper(today.atStartOfDay());
-        order.setHeader(header);
         for (int i = 0; i < FIELDS.size(); i++) {
-            set(order, FIELDS.get(i), values.get(i), i + 1, null);
+            set(order, FIELDS.get(i), values.get(i), i + 1, null, at);
         }
-        int groups = detailValues / DETAIL_FIELDS.size();
+        int groups = detailValues / group;
         for (int g = 0; g < groups; g++) {
             Orderdetail od = new Orderdetail();
-            for (int j = 0; j < DETAIL_FIELDS.size(); j++) {
-                int pos = FIELDS.size() + g * DETAIL_FIELDS.size() + j;
-                set(od, DETAIL_FIELDS.get(j), values.get(pos), pos + 1, g + 1);
+            for (int j = 0; j < group; j++) {
+                int pos = FIELDS.size() + g * group + j;
+                set(od, DETAIL_FIELDS.get(j), values.get(pos), pos + 1, g + 1, at);
             }
             order.addOrderdetail(od);
         }
@@ -177,8 +217,11 @@ public final class OrderFileParser {
             out.add(line.substring(from, at));
             from = at + 1;
         }
+        // Хвост после последнего «^» — последнее поле, даже если это одни пробелы
+        // (в архиве последняя «Причина отказа» бывает из 12 пробелов: без этого
+        // ответный файл терял бы их). Пустой хвост — это просто завершающий «^».
         String tail = line.substring(from);
-        if (!tail.trim().isEmpty()) {
+        if (!tail.isEmpty()) {
             out.add(tail);
         }
         return out;
@@ -188,8 +231,13 @@ public final class OrderFileParser {
         return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s;
     }
 
-    private static void set(Object target, Field field, String raw, int position, Integer group) {
-        Object value = convert(field, raw, position, group);
+    private static void set(Object target, Field field, String raw, int position, Integer group, String at) {
+        Object value;
+        try {
+            value = convert(field, raw, position, group);
+        } catch (OrderFormatException e) {
+            throw new OrderFormatException(at + e.getMessage());
+        }
         try {
             String setter = "set" + Character.toUpperCase(field.name.charAt(0)) + field.name.substring(1);
             Class<?> type = field.kind == Kind.INT ? Integer.class
@@ -246,5 +294,18 @@ public final class OrderFileParser {
                 }
                 return raw;
         }
+    }
+    /** Значение поля сущности по имени (геттер). */
+    static Object read(Object target, String name) {
+        try {
+            for (PropertyDescriptor pd : Introspector.getBeanInfo(target.getClass()).getPropertyDescriptors()) {
+                if (pd.getName().equals(name) && pd.getReadMethod() != null) {
+                    return pd.getReadMethod().invoke(target);
+                }
+            }
+        } catch (IntrospectionException | ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        throw new IllegalStateException("Нет поля " + name + " в " + target.getClass().getSimpleName());
     }
 }

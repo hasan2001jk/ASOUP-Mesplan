@@ -2,6 +2,9 @@ package tj.railway.mesplan.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import tj.railway.mesplan.configuration.NoKnownClient;
@@ -12,6 +15,7 @@ import tj.railway.mesplan.web.ApiException;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -61,8 +65,34 @@ public class OrderController {
         if (file.isEmpty()) {
             throw ApiException.badRequest("Файл пустой");
         }
-        Order saved = mesplanService.uploadOrder(file.getBytes(), file.getOriginalFilename());
-        return new ResultResponse("Заявка № " + saved.getOrderno().trim() + " (строка " + saved.getStrorderno()
-                + ") загружена, администраций: " + saved.getOrderdetails().size(), saved.getId());
+        List<Order> saved = mesplanService.uploadOrders(file.getBytes(), file.getOriginalFilename());
+        List<Integer> ids = new ArrayList<>();
+        for (Order o : saved) {
+            ids.add(o.getId());
+        }
+        Order first = saved.get(0);
+        String text = saved.size() == 1
+                ? "Заявка № " + first.getOrderno().trim() + " (строка " + first.getStrorderno() + ") загружена, администраций: "
+                        + first.getOrderdetails().size()
+                : "Загружено заявок: " + saved.size();
+        return new ResultResponse(text, first.getHeader(), ids);
+    }
+
+    /**
+     * Ответный файл по загруженному файлу заявок — скачивание. Имя — идентификатор
+     * ответа + «.txt», как сохраняла старая программа; содержимое — CP866.
+     * Имя отдаётся в Content-Disposition и X-Answer-Identifier (открыты для фронта).
+     */
+    @CrossOrigin(exposedHeaders = {"Content-Disposition", "X-Answer-Identifier", "X-Answer-From-Original"})
+    @GetMapping("/answer")
+    public ResponseEntity<byte[]> answer(@RequestParam("header") String header,
+                                         @RequestParam(value = "month", required = false) Integer month) {
+        MesplanService.Answer a = mesplanService.answerFile(header, month);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + a.getIdentifier() + ".txt\"")
+                .header("X-Answer-Identifier", a.getIdentifier())
+                .header("X-Answer-From-Original", String.valueOf(a.isFromOriginal()))
+                .contentType(new MediaType("text", "plain", MesplanService.FILE_CHARSET))
+                .body(a.getContent());
     }
 }

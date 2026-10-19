@@ -21,6 +21,16 @@ public class OrderFileParserTest {
     static final Charset CP866 = Charset.forName("IBM866");
     static final LocalDate TODAY = LocalDate.now();
 
+    /** Идентификатор файла — как в настоящих файлах архива. */
+    public static final String HEADER = "PL_K6611-2026-11-10-10.00.00.000000_NV_2013.1";
+
+    /** Файл, в котором заявка ровно одна. */
+    public static Order one(String text, LocalDate today) {
+        List<Order> all = OrderFileParser.parseFile(text, today);
+        assertEquals(1, all.size(), "заявок в файле");
+        return all.get(0);
+    }
+
     static final ObjectMapper JSON = new ObjectMapper().registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
@@ -39,7 +49,7 @@ public class OrderFileParserTest {
 
     /** Строка файла: каждое поле с «^» на конце, как в исходном формате. */
     public static String file(List<String> values) {
-        StringBuilder sb = new StringBuilder("(:МЕСПЛАН 66 15112026:)\r\n");
+        StringBuilder sb = new StringBuilder(HEADER + "\r\n");
         for (String v : values) {
             sb.append(v).append('^');
         }
@@ -59,8 +69,8 @@ public class OrderFileParserTest {
 
     @Test
     void readsAllFieldsOfARealisticFile() {
-        Order o = OrderFileParser.parse(file(twoAdms()), TODAY);
-        assertEquals("(:МЕСПЛАН 66 15112026:)", o.getHeader());
+        Order o = one(file(twoAdms()), TODAY);
+        assertEquals(HEADER, o.getHeader());
         assertEquals(TODAY.atStartOfDay(), o.getDateoper(), "дата загрузки — сегодня");
         assertEquals(66, o.getAdm());
         assertEquals("2s", o.getStrview());
@@ -94,7 +104,7 @@ public class OrderFileParserTest {
             }
             String text = file(v);
             Order legacy = LegacyOrderParser.getOrder(text);
-            Order now = OrderFileParser.parse(text, TODAY);
+            Order now = one(text, TODAY);
             assertEquals(json(legacy), json(now), "файл " + n);
             compared++;
         }
@@ -109,14 +119,14 @@ public class OrderFileParserTest {
         Order legacy = LegacyOrderParser.getOrder(text);
         assertEquals("", legacy.getOrderdetails().get(1).getDenyreason(), "так было: причина пропадала");
         assertEquals("нет согласования стыка",
-                OrderFileParser.parse(text, TODAY).getOrderdetails().get(1).getDenyreason());
+                one(text, TODAY).getOrderdetails().get(1).getDenyreason());
     }
 
     @Test
     void acceptsMissingEmptyLastReasonLikeLegacy() {
         List<String> v = orderValues();
         v.addAll(detail("66", "746000", "1", "x").subList(0, 7));
-        Order o = OrderFileParser.parse(file(v), TODAY);
+        Order o = one(file(v), TODAY);
         assertEquals("", o.getOrderdetails().get(0).getDenyreason());
     }
 
@@ -125,31 +135,32 @@ public class OrderFileParserTest {
     void trailingNewlineIsHarmless() throws Exception {
         String text = file(twoAdms());
         assertThrows(RuntimeException.class, () -> LegacyOrderParser.getOrder(text + "\r\n"), "так было");
-        assertEquals(json(OrderFileParser.parse(text, TODAY)), json(OrderFileParser.parse(text + "\r\n", TODAY)));
-        assertEquals(json(OrderFileParser.parse(text, TODAY)), json(OrderFileParser.parse(text.replace("\r\n", "\n") + "\n", TODAY)));
+        assertEquals(json(one(text, TODAY)), json(one(text + "\r\n", TODAY)));
+        assertEquals(json(one(text, TODAY)), json(one(text.replace("\r\n", "\n") + "\n", TODAY)));
     }
 
     @Test
     void cp866RoundTripOfCyrillic() {
         byte[] bytes = file(twoAdms()).getBytes(CP866);
-        Order o = OrderFileParser.parse(new String(bytes, CP866), TODAY);
+        Order o = one(new String(bytes, CP866), TODAY);
         assertEquals("ГУП ТАДЖИКСКИЙ АЛЮМИНИЙ", o.getOtprname());
     }
 
     // ── ошибки называют место ──
 
     private static String error(String text) {
-        return assertThrows(OrderFormatException.class, () -> OrderFileParser.parse(text, TODAY)).getMessage();
+        return assertThrows(OrderFormatException.class, () -> OrderFileParser.parseFile(text, TODAY)).getMessage();
     }
 
     @Test
     void errorsAreSpecific() {
         assertEquals("Файл пустой", error("  "));
-        assertTrue(error("только одна строка").contains("одна строка"));
+        assertTrue(error("только одна строка").contains("строка 1: полей 1"), error("только одна строка"));
+        assertEquals("В файле нет ни одной заявки", error(HEADER + "\r\n\r\n"));
 
         List<String> bad = twoAdms();
         bad.set(3, "2026-11-15");
-        assertTrue(error(file(bad)).contains("поле 4 «Дата погрузки»"), error(file(bad)));
+        assertTrue(error(file(bad)).contains("строка 2, поле 4 «Дата погрузки»"), error(file(bad)));
 
         bad = twoAdms();
         bad.set(3, "31022026");
@@ -167,17 +178,49 @@ public class OrderFileParserTest {
         bad.set(10, new String(new char[51]).replace('\0', 'А'));
         assertTrue(error(file(bad)).contains("«Отправитель»: длина 51, допустимо 50"));
 
-        assertTrue(error(file(orderValues().subList(0, 30))).contains("полей 30, а у заявки их 35"));
+        assertTrue(error(file(orderValues().subList(0, 30))).contains("строка 2: полей 30, а у заявки их не меньше 35"));
 
         List<String> ragged = orderValues();
         ragged.addAll(Arrays.asList("66", "746000", "ЭКСП"));
         assertTrue(error(file(ragged)).contains("не делится на группы по 8"));
     }
 
+    /** Как в архиве: одна строка — одна заявка; у 20 % файлов их больше одной. */
     @Test
-    void severalDataLinesAreRefusedNotTruncated() {
-        String text = file(twoAdms()) + "\r\n" + String.join("^", orderValues()) + "^";
-        assertTrue(error(text).contains("больше одной строки"), "вторая заявка не теряется молча");
+    void severalOrdersInOneFile() {
+        List<String> second = orderValues();
+        second.set(6, "0000012346");
+        second.addAll(detail("66", "746000", "0", ""));
+        second.set(34, "1");
+        String text = file(twoAdms()) + "\r\n" + String.join("^", second) + "^\r\n";
+        List<Order> all = OrderFileParser.parseFile(text, TODAY);
+        assertEquals(2, all.size());
+        assertEquals("0000012345", all.get(0).getOrderno());
+        assertEquals("0000012346", all.get(1).getOrderno());
+        assertEquals(1, all.get(1).getOrderdetails().size());
+        assertEquals(HEADER, all.get(1).getHeader(), "идентификатор — у каждой заявки файла");
+    }
+
+    /** «Вид строки» 001: у администрации 6 полей — без результата и причины (main.pas). */
+    @Test
+    void strview001HasSixFieldGroups() {
+        List<String> v = orderValues();
+        v.set(2, "001");
+        v.addAll(Arrays.asList("66", "746000", "ЭКСП", "12", "0066", "ГУП \"РОТ\""));
+        v.addAll(Arrays.asList("29", "746805", "ЭКСП-2", "13", "0029", "УТИ"));
+        Order o = one(file(v), TODAY);
+        assertEquals(2, o.getOrderdetails().size());
+        assertEquals("ЭКСП-2", o.getOrderdetails().get(1).getExpname());
+        assertNull(o.getOrderdetails().get(1).getResult());
+    }
+
+    /** Строка «R…» — тоже идентификатор (ответные файлы), как в main.pas. */
+    @Test
+    void identifierLinesStartWithPOrR() {
+        String text = file(twoAdms()).replace(HEADER, "RYPL_K2710-2026-10-16-15.17.45.005159_NV_2013.1");
+        assertEquals("RYPL_K2710-2026-10-16-15.17.45.005159_NV_2013.1", one(text, TODAY).getHeader());
+        String tooLong = file(twoAdms()).replace(HEADER, HEADER + "-EXTRA-TEXT-EXTRA");
+        assertTrue(error(tooLong).contains("идентификатор файла длиннее 50"));
     }
 
     @Test
@@ -185,6 +228,6 @@ public class OrderFileParserTest {
         assertEquals(35, OrderFileParser.FIELDS.size());
         assertEquals(8, OrderFileParser.DETAIL_FIELDS.size());
         // Каждое поле таблиц существует в сущности (разбор не упадёт на отражении).
-        OrderFileParser.parse(file(twoAdms()), TODAY);
+        one(file(twoAdms()), TODAY);
     }
 }

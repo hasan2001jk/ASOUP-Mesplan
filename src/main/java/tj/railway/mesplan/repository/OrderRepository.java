@@ -11,4 +11,9 @@ public interface OrderRepository extends JpaRepository<Order, Integer> {
 
     /** Заявки, загруженные/введённые в [from, to) — для «Просмотра», новые сверху. */
     List<Order> findAllByDateoperGreaterThanEqualAndDateoperLessThanOrderByIdDesc(LocalDateTime from, LocalDateTime to);
+
+    long countByHeader(String header);
+
+    /** Заявки одного файла — в порядке строк файла (id растёт в порядке загрузки). */
+    List<Order> findAllByHeaderOrderByIdAsc(String header);
 }

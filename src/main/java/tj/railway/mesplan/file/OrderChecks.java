@@ -3,9 +3,6 @@ package tj.railway.mesplan.file;
 import tj.railway.mesplan.entity.Order;
 import tj.railway.mesplan.entity.Orderdetail;
 
-import java.beans.IntrospectionException;
-import java.beans.Introspector;
-import java.beans.PropertyDescriptor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -63,7 +60,7 @@ public final class OrderChecks {
     private static void check(Object target, List<OrderFileParser.Field> fields, Set<String> required,
                               String prefix, List<String> out) {
         for (OrderFileParser.Field field : fields) {
-            Object value = read(target, field.name);
+            Object value = OrderFileParser.read(target, field.name);
             if (value == null) {
                 if (required.contains(field.name)) {
                     out.add(prefix + "не заполнено «" + field.label + "»");
@@ -82,16 +79,4 @@ public final class OrderChecks {
         }
     }
 
-    private static Object read(Object target, String name) {
-        try {
-            for (PropertyDescriptor pd : Introspector.getBeanInfo(target.getClass()).getPropertyDescriptors()) {
-                if (pd.getName().equals(name) && pd.getReadMethod() != null) {
-                    return pd.getReadMethod().invoke(target);
-                }
-            }
-        } catch (IntrospectionException | ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-        throw new IllegalStateException("Нет поля " + name + " в " + target.getClass().getSimpleName());
-    }
 }

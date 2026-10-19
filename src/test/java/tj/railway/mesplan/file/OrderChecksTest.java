@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OrderChecksTest {
 
     static Order valid() {
-        return OrderFileParser.parse(OrderFileParserTest.file(OrderFileParserTest.twoAdms()), LocalDate.now());
+        return OrderFileParserTest.one(OrderFileParserTest.file(OrderFileParserTest.twoAdms()), LocalDate.now());
     }
 
     @Test

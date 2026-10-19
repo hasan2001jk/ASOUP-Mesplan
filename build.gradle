@@ -41,6 +41,12 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // Архив сообщений для ArchiveRoundTripTest: -Dmesplan.archive=<папка> (без него тест пропускается).
+    // Пустое значение передавать нельзя: Paths.get("") — текущая папка, и тест обошёл бы весь проект.
+    if (System.getProperty('mesplan.archive')) {
+        systemProperty 'mesplan.archive', System.getProperty('mesplan.archive')
+    }
+    testLogging { showStandardStreams = true }
 }
 
 // Один исполняемый JAR без «-plain» — его и кладут на сервер.

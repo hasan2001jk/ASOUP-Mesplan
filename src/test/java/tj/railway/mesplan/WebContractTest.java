@@ -37,26 +37,27 @@ class WebContractTest {
     MesplanService service;
 
     static Order parsed() {
-        Order o = OrderFileParser.parse(OrderFileParserTest.file(OrderFileParserTest.twoAdms()), LocalDate.now());
+        Order o = OrderFileParserTest.one(OrderFileParserTest.file(OrderFileParserTest.twoAdms()), LocalDate.now());
         o.setId(5);
         return o;
     }
 
     @Test
     void uploadSuccessIsResultNotMessage() throws Exception {
-        when(service.uploadOrder(any(), anyString())).thenReturn(parsed());
+        when(service.uploadOrders(any(), anyString())).thenReturn(java.util.Collections.singletonList(parsed()));
         mvc.perform(multipart("/api/order/upload").file(new MockMultipartFile("file", "z.txt", "text/plain", new byte[]{1})))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("Заявка № 0000012345 (строка 3) загружена, администраций: 2"))
-                .andExpect(jsonPath("$.id").value(5))
+                .andExpect(jsonPath("$.ids[0]").value(5))
+                .andExpect(jsonPath("$.header").value(OrderFileParserTest.HEADER))
                 .andExpect(jsonPath("$.message").doesNotExist());
     }
 
     @Test
     void uploadFormatErrorIs400WithPlace() throws Exception {
         byte[] bad = "только одна строка".getBytes(MesplanService.FILE_CHARSET);
-        when(service.uploadOrder(any(), anyString())).thenAnswer(inv ->
-                OrderFileParser.parse(new String((byte[]) inv.getArgument(0), MesplanService.FILE_CHARSET), LocalDate.now()));
+        when(service.uploadOrders(any(), anyString())).thenAnswer(inv ->
+                OrderFileParser.parseFile(new String((byte[]) inv.getArgument(0), MesplanService.FILE_CHARSET), LocalDate.now()));
         mvc.perform(multipart("/api/order/upload").file(new MockMultipartFile("file", "z.txt", "text/plain", bad)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("Неверный формат файла заявок: ")));
@@ -72,7 +73,7 @@ class WebContractTest {
 
     @Test
     void databaseFailureIs502() throws Exception {
-        when(service.uploadOrder(any(), anyString())).thenThrow(new DataIntegrityViolationException("515"));
+        when(service.uploadOrders(any(), anyString())).thenThrow(new DataIntegrityViolationException("515"));
         mvc.perform(multipart("/api/order/upload").file(new MockMultipartFile("file", "z.txt", "text/plain", new byte[]{1})))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.message").value("Не удалось выполнить операцию в базе МЕСПЛАН"));
