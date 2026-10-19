@@ -10,8 +10,8 @@
 #
 # Внутри:
 #   - SQL Server 2019, база mesplan с кириллической сортировкой (Cyrillic_General_CI_AS)
-#     и схемой рабочей базы из SCHEMA (по умолчанию docs/schema-2025-01-22.sql — снимок
-#     IntelliJ). DDL=create — вместо этого схему создаёт служба по сущностям.
+#     и схемой рабочей базы из SCHEMA (по умолчанию docs/schema.sql — выгрузка
+#     из SSMS 19.10.2026). DDL=create — вместо этого схему создаёт служба по сущностям.
 #   - три строки справочников (род вагона, признак собственности, типоразмер);
 #   - служба из build/libs/mesplan.jar на Java 1.8.0_65 — той же версии, что на сервере
 #     (Zulu 8u65 берётся из кэша стенда AsoupServer или скачивается один раз).
@@ -54,7 +54,7 @@ up() {
     sleep 3
   done
   if [ "${DDL:-none}" = none ]; then
-    docker cp "${SCHEMA:-${ROOT}/docs/schema-2025-01-22.sql}" mp-stand-sql:/tmp/schema.sql
+    docker cp "${SCHEMA:-${ROOT}/docs/schema.sql}" mp-stand-sql:/tmp/schema.sql
     sqlcmd -d mesplan -b -i /tmp/schema.sql >/dev/null
   fi
   cat > "${CACHE}/cfg/stand.properties" <<EOF

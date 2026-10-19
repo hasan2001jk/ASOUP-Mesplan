@@ -27,7 +27,7 @@ public class Order {
     @Column(name = "adm", nullable = false)
     private Integer adm;
 
-    @Column(name = "ftype", nullable = false, length = 2)
+    @Column(name = "ftype", nullable = false, length = 4)
     private String ftype;
 
     @Column(name = "strview", nullable = false, length = 3)
@@ -72,10 +72,9 @@ public class Order {
     @Column(name = "gng", nullable = false, length = 12)
     private String gng;
 
-    // Колонка в базе называется strbazn (опечатка при создании таблицы, снимок
-    // схемы 22.01.2025 — docs/schema-2025-01-22.sql). Поле и JSON остаются strnazn:
-    // так их знают фронт и разбор файла.
-    @Column(name = "strbazn", nullable = false)
+    // В снимке схемы 22.01.2025 колонка называлась strbazn; в действующей базе
+    // (выгрузка из SSMS 19.10.2026, docs/schema.sql) — strnazn.
+    @Column(name = "strnazn", nullable = false)
     private Integer strnazn;
 
     @Column(name = "codegrpolport", length = 20)
@@ -132,10 +131,11 @@ public class Order {
     @Column(name = "admcount", columnDefinition = "tinyint not null")
     private Short admcount;
 
-    // Первая (служебная) строка файла заявок. Колонки для неё в таблице orders НЕТ —
-    // с отображением на колонку любое чтение и запись заявок падали
-    // («Invalid column name 'header'»). Поле живёт только в ответе на загрузку.
-    @Transient
+    // Первая (служебная) строка файла заявок — его идентификатор, например
+    // «PL_K6610-2026-10-15-14.59.56.666397_NV_2013.1». У всех заявок одного файла
+    // он общий: по нему собирается ответный файл. Колонка varchar(50) NULL —
+    // есть в действующей базе (в снимке 22.01.2025 её ещё не было).
+    @Column(name = "header", length = 50)
     private String header;
 
     // orphanRemoval: администрация, убранная из заявки в форме, удаляется и из
