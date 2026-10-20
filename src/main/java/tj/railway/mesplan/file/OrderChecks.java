@@ -43,6 +43,7 @@ public final class OrderChecks {
                 n++;
                 check(od, OrderFileParser.DETAIL_FIELDS, DETAIL_REQUIRED, "администрация " + n + ": ", out);
             }
+            ourAnswer(order, out);
         }
         return out;
     }
@@ -55,6 +56,28 @@ public final class OrderChecks {
         }
         check(od, OrderFileParser.DETAIL_FIELDS, DETAIL_REQUIRED, "", out);
         return out;
+    }
+
+    /**
+     * Ответ нашей администрации (66) — те же правила, что проверит сеть (AnswerRules):
+     * результат 0–3 (4 «отозвана» ставит только сеть), при 2 и 3 — причина,
+     * при нескольких 66 в маршруте — одинаковый результат.
+     */
+    private static void ourAnswer(Order order, List<String> out) {
+        Set<Short> results = new HashSet<>();
+        for (Orderdetail d : AnswerRules.ours(order)) {
+            short r = d.getResult() == null ? 0 : d.getResult();
+            results.add(r);
+            if (r < 0 || r > 3) {
+                out.add("наш ответ (66): результат " + r + " — можно 0, 1, 2 или 3");
+            }
+            if ((r == 2 || r == 3) && (d.getDenyreason() == null || d.getDenyreason().trim().isEmpty())) {
+                out.add("наш ответ (66): при результате " + r + " нужна причина");
+            }
+        }
+        if (results.size() > 1) {
+            out.add("наша администрация (66) стоит в маршруте несколько раз — результат должен быть одинаковым");
+        }
     }
 
     private static void check(Object target, List<OrderFileParser.Field> fields, Set<String> required,

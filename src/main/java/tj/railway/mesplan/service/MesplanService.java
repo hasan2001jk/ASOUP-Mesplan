@@ -59,6 +59,10 @@ public class MesplanService {
         byte[] content;
         int orders;
         boolean fromOriginal;
+        /** Строк в ответе; пропущено — только для сведения и ещё без нашего ответа. */
+        int lines;
+        int informational;
+        int unanswered;
     }
 
     public List<Rodvag> getRodvags() {
@@ -245,10 +249,25 @@ public class MesplanService {
         int m = month != null ? month : monthOf(header);
         String identifier = AnswerFileWriter.identifier(header, m, LocalDateTime.now(), answerHourShift);
         Optional<byte[]> original = originalFiles.load(header);
-        String text = AnswerFile.build(identifier, orders,
-                original.map(b -> new String(b, FILE_CHARSET)).orElse(null));
-        log.info("Ответный файл {} по {}: заявок {}, из исходного: {}", identifier, header, orders.size(), original.isPresent());
-        return new Answer(identifier, text.getBytes(FILE_CHARSET), orders.size(), original.isPresent());
+        AnswerFile.Built built = AnswerFile.answer(identifier, orders,
+                original.map(b -> new String(b, FILE_CHARSET)).orElse(null), LocalDate.now());
+        if (!built.problems.isEmpty()) {
+            // Сеть отклонила бы эти строки (квитанция RC… с кодами ошибок) — лучше сказать сразу.
+            int shown = Math.min(built.problems.size(), 15);
+            throw ApiException.badRequest("Ответный файл не собран — сеть отклонила бы строки:\n"
+                    + String.join("\n", built.problems.subList(0, shown))
+                    + (built.problems.size() > shown ? "\n… и ещё " + (built.problems.size() - shown) : ""));
+        }
+        if (built.lines == 0) {
+            throw ApiException.badRequest("Отвечать нечего: " + (built.unanswered > 0
+                    ? "нет ответа нашей администрации (66) ни на одну строку — строк без ответа: " + built.unanswered
+                    : "все строки файла только для сведения (итог согласования, отзыв)")
+                    + (built.informational > 0 && built.unanswered > 0 ? "; только для сведения: " + built.informational : ""));
+        }
+        log.info("Ответный файл {} по {}: строк {}, для сведения {}, без ответа {}, из исходного: {}",
+                identifier, header, built.lines, built.informational, built.unanswered, original.isPresent());
+        return new Answer(identifier, built.text.getBytes(FILE_CHARSET), orders.size(), original.isPresent(),
+                built.lines, built.informational, built.unanswered);
     }
 
     /** «PL_K6610-…» → 10; не разобрать — текущий месяц. */

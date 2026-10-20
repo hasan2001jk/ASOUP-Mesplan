@@ -66,30 +66,68 @@ async function login(browser, user) {
   const rows = page.locator('.md-row');
   ok('три администрации, как в файле', (await rows.count()) === 3);
   ok('отправитель — кириллица цела', (await page.inputValue('input[name=otprname]')) === 'АО "ТАИФ-НК"');
-  await rows.nth(2).locator('select').selectOption({ label: '2 — отказ' });
+  await rows.nth(2).locator('select').selectOption({ label: '2 — отказ (несогласована)' });
   await rows.nth(2).locator('input').last().fill('нет гарантийного письма грузополучателя');
   await page.click('button:has-text("Сохранить изменения")');
   t = await waitSnack(page, /Изменения сохранены/);
   ok('ответ администрации 66 сохранён', /Изменения сохранены/.test(t), t);
   await page.screenshot({ path: '/w/2-edit.png', fullPage: true });
 
-  // 2б. Ответный файл: строки входящего, изменены только результат и причина 66
+  // 2б. Ответный файл: только строки с нашим ответом, вид строки — 2s (сеть отклоняет «2», 0133)
   await page.click('[data-tab="3"]');
   await page.waitForSelector('.ve-group');
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('.ve-group').filter({ hasText: '666397' }).locator('button:has-text("Ответный файл")').click()]);
+  const grp = page.locator('.ve-group').filter({ hasText: '666397' });
+  ok('«наш ответ: 1 из 2» и срок ответа по доп. плану', /наш ответ: 1 из 2/.test(await grp.innerText()) && /ответить до 20\.10\.2026/.test(await grp.innerText()),
+    (await grp.locator('.ve-group__meta').innerText()).replace(/\s+/g, ' '));
+  const [dl] = await Promise.all([page.waitForEvent('download'), grp.locator('button:has-text("Ответный файл")').click()]);
   const name = dl.suggestedFilename();
   const fs2 = require('fs');
   await dl.saveAs('/w/answer.txt');
+  t = await waitSnack(page, /строк: 1/);
+  ok('тост: в ответе 1 строка, 1 — без нашего ответа', /строк: 1 \(не вошли — без нашего ответа: 1\)/.test(t), t);
   ok('имя ответа — как «Сформировать»: PL_K6610-…123_NV_2013.1.txt', /^PL_K6610-\d{4}-\d{2}-\d{2}-\d{2}\.\d{2}\.\d{2}\.\d{2,3}1230?_NV_2013\.1\.txt$/.test(name), name);
   const orig = fs2.readFileSync('/w/real.txt').toString('latin1').split('\r\n');
   const ans = fs2.readFileSync('/w/answer.txt').toString('latin1').split('\r\n');
   ok('первая строка ответа — его идентификатор', ans[0] + '.txt' === name);
-  ok('первая заявка — байт в байт как пришла', ans[1] === orig[1]);
-  const a2 = ans[2], o2 = orig[2];
-  ok('вторая заявка — изменены только результат и причина 66',
-    a2.startsWith(o2.slice(0, o2.lastIndexOf('^0^'))) && a2.includes('^2^') && a2.length > o2.length - 2, a2.slice(-60));
-  ok('в ответе ровно две заявки', ans.filter(l => l.length > 0).length === 3);
+  ok('в ответе одна заявка — та, на которую ответили', ans.filter(l => l.length > 0).length === 2);
+  const a2 = ans[1], o2 = orig[2];
+  const sameTail = o2.slice(o2.indexOf('^', o2.indexOf('^', o2.indexOf('^') + 1) + 1), o2.lastIndexOf('^0^'));
+  ok('вид строки 2s, остальное как пришло, изменены результат и причина 66',
+    a2.split('^')[2] === '2s' && a2.includes(sameTail) && /\^2\^[^^]+$/.test(a2), a2.slice(0, 20) + ' … ' + a2.slice(-50));
   await page.screenshot({ path: '/w/2b-groups.png', fullPage: true });
+
+  // 2в. Правка, которую сеть не примет (станция назначения) — файл не собирается, причина видна
+  await grp.locator('.ve-table tbody tr').nth(1).locator('button[aria-label="Открыть заявку"]').click();
+  await page.waitForSelector('.mp-mode--edit');
+  const stOld = await page.inputValue('input[name=stnazn]');
+  await page.fill('input[name=stnazn]', '745807');
+  await page.click('button:has-text("Сохранить изменения")');
+  await waitSnack(page, /Изменения сохранены/);
+  await page.click('[data-tab="3"]');
+  await page.waitForSelector('.ve-group');
+  await page.locator('.ve-group').filter({ hasText: '666397' }).locator('button:has-text("Ответный файл")').click();
+  await page.waitForSelector('.ve-answer-errors', { timeout: 10000 }).catch(() => null);
+  const errText = await page.locator('.ve-answer-errors').innerText().catch(() => '');
+  ok('изменена станция назначения — файл не собран, причина с кодом сети', /Станция назначения/.test(errText) && /0099/.test(errText), errText.replace(/\s+/g, ' '));
+  ok('после 400 оператор не выкинут', !page.url().includes('/login'));
+  await page.screenshot({ path: '/w/2c-answer-blocked.png', fullPage: true });
+  // вернуть станцию
+  await page.locator('.ve-group').filter({ hasText: '666397' }).locator('.ve-table tbody tr').nth(1).locator('button[aria-label="Открыть заявку"]').click();
+  await page.waitForSelector('.mp-mode--edit');
+  await page.fill('input[name=stnazn]', stOld);
+  await page.click('button:has-text("Сохранить изменения")');
+  await waitSnack(page, /Изменения сохранены/);
+
+  // 2г. Квитанция сети на наш ответ — разбирается в «Загрузке», на сервер не идёт
+  await page.click('[data-tab="1"]');
+  const before = P.statuses.length;
+  await page.setInputFiles('input[type=file]', '/w/RCPL_K6610-2026-10-13-13.37.55.427123_NV_2013.1');
+  await page.waitForSelector('.mp-rc', { timeout: 10000 }).catch(() => null);
+  const rc = await page.locator('.mp-rc').innerText().catch(() => '');
+  ok('квитанция: отклонено 1, код 0133 с причиной и подсказкой', /отклонено 1/.test(rc) && /0133/.test(rc) && /2s/.test(rc), rc.replace(/\s+/g, ' ').slice(0, 200));
+  ok('квитанция не отправлялась на сервер', P.statuses.length === before);
+  await page.screenshot({ path: '/w/2d-receipt.png', fullPage: true });
+  await page.click('button[aria-label="Закрыть квитанцию"]');
 
   // 1б. Тот же файл ещё раз — 409, дублей нет
   await page.click('[data-tab="1"]');

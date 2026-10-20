@@ -46,6 +46,10 @@ test {
     if (System.getProperty('mesplan.archive')) {
         systemProperty 'mesplan.archive', System.getProperty('mesplan.archive')
     }
+    // Пары «входящая строка — ответ старой программы — квитанция сети» для ArchiveAnswerRulesTest.
+    if (System.getProperty('mesplan.answers')) {
+        systemProperty 'mesplan.answers', System.getProperty('mesplan.answers')
+    }
     testLogging { showStandardStreams = true }
 }
 

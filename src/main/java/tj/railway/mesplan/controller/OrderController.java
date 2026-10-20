@@ -83,7 +83,8 @@ public class OrderController {
      * ответа + «.txt», как сохраняла старая программа; содержимое — CP866.
      * Имя отдаётся в Content-Disposition и X-Answer-Identifier (открыты для фронта).
      */
-    @CrossOrigin(exposedHeaders = {"Content-Disposition", "X-Answer-Identifier", "X-Answer-From-Original"})
+    @CrossOrigin(exposedHeaders = {"Content-Disposition", "X-Answer-Identifier", "X-Answer-From-Original",
+            "X-Answer-Lines", "X-Answer-Informational", "X-Answer-Unanswered"})
     @GetMapping("/answer")
     public ResponseEntity<byte[]> answer(@RequestParam("header") String header,
                                          @RequestParam(value = "month", required = false) Integer month) {
@@ -92,6 +93,9 @@ public class OrderController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + a.getIdentifier() + ".txt\"")
                 .header("X-Answer-Identifier", a.getIdentifier())
                 .header("X-Answer-From-Original", String.valueOf(a.isFromOriginal()))
+                .header("X-Answer-Lines", String.valueOf(a.getLines()))
+                .header("X-Answer-Informational", String.valueOf(a.getInformational()))
+                .header("X-Answer-Unanswered", String.valueOf(a.getUnanswered()))
                 .contentType(new MediaType("text", "plain", MesplanService.FILE_CHARSET))
                 .body(a.getContent());
     }
